@@ -14,7 +14,6 @@
 #include "config.h"
 #endif
 
-
 #include <string.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -32,10 +31,12 @@ static void net_connection_free(netc_t *netc)
 	if (netc != NULL) {
 
 		if (netc->kconn != NULL) {
+			free(netc->kconn->buf_decrypt);
+			free(netc->kconn->buf_encrypt);
 			free(netc->kconn);
 		}
 
-		DNDSMessage_del(netc->msg_dec);
+		//DNDSMessage_del(netc->msg_dec);
 		free(netc->buf_in);
 		free(netc->buf_enc);
 		mbuf_free(&netc->queue_msg);
@@ -46,12 +47,14 @@ static void net_connection_free(netc_t *netc)
 
 static netc_t *net_connection_new(uint8_t security_level)
 {
-	netc_t *netc;
+	netc_t *netc = NULL;
+
+	/* FIXME: this must be replaced by a dynamic-buffer subsystem */
+	static int buf_size = 1000000; /* ~1MB */
 
 	netc = calloc(1, sizeof(netc_t));
-	if (netc == NULL) {
+	if (netc == NULL)
 		return NULL;
-	}
 
 	if (security_level > NET_UNSECURE) {
 
@@ -68,21 +71,37 @@ static netc_t *net_connection_new(uint8_t security_level)
 		netc->kconn->network_bio = NULL;
 		netc->kconn->status = KRYPT_NOINIT;
 
-		netc->kconn->buf_decrypt = calloc(1, 1000000);	// XXX dynamic buffer
-		netc->kconn->buf_decrypt_size = 1000000;
+		netc->kconn->buf_decrypt = calloc(1, buf_size);
+		if (netc->kconn->buf_decrypt == NULL) {
+			net_connection_free(netc);
+			return NULL;
+		}
+		netc->kconn->buf_decrypt_size = buf_size;
 		netc->kconn->buf_decrypt_data_size = 0;
 
-		netc->kconn->buf_encrypt = calloc(1, 1000000);	// XXX dynamic buffer
-		netc->kconn->buf_encrypt_size = 1000000;
+		netc->kconn->buf_encrypt = calloc(1, buf_size);
+		if (netc->kconn->buf_encrypt == NULL) {
+			net_connection_free(netc);
+			return NULL;
+		}
+		netc->kconn->buf_encrypt_size = buf_size;
 		netc->kconn->buf_encrypt_data_size = 0;
 	}
 
-	netc->buf_enc = malloc(1000000);	// XXX dynamic buffer
-	netc->buf_enc_size = 1000000;	// XXX initialization size
+	netc->buf_enc = malloc(buf_size);
+	if (netc->buf_enc == NULL) {
+		net_connection_free(netc);
+		return NULL;
+	}
+	netc->buf_enc_size = buf_size;
 	netc->buf_enc_data_size = 0;
 
-	netc->buf_in = malloc(1000000);	// XXX dynamic buffer
-	netc->buf_in_size = 1000000;	// XXX initialization size
+	netc->buf_in = malloc(buf_size);
+	if (netc->buf_in == NULL) {
+		net_connection_free(netc);
+		return NULL;
+	}
+	netc->buf_in_size = buf_size;
 	netc->buf_in_offset = 0;
 	netc->buf_in_data_size = 0;
 
